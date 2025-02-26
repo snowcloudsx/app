@@ -1,5 +1,4 @@
 // server.js
-const notificationapi = require('notificationapi-node-server-sdk').default;
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -28,27 +27,6 @@ webpush.setVapidDetails(
 // Store user push subscriptions
 const userSubscriptions = {};
 
-function initNoti() {
-  notificationapi.init(
-    '7ek7cs4sow9pqewmd2rmu976ez', // clientId
-    'qjxstjec3cp03nynqygywer6gf9assg52uyae2iwh0xh1tr7gi0a8q7ut5' // clientSecret
-  )
-  
-  notificationapi.send({
-    notificationId: 'you_ve_received_a_message_',
-    user: {
-      id: "peregrine.asbell@rsu35.org",
-      email: "peregrine.asbell@rsu35.org",
-      number: "+15005550006" // Replace with your phone number, use format [+][country code][area code][local number]
-    },
-    mergeTags: {
-      "Message": "testMessage",
-      "commentId": "testCommentId"
-    }
-  })
-}
-
-initNoti();
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -62,10 +40,10 @@ app.get('/', (req, res) => {
 app.post('/subscribe', (req, res) => {
   const subscription = req.body.subscription;
   const username = req.body.username;
-  
+
   // Store the subscription with the username
   userSubscriptions[username] = subscription;
-  
+
   console.log(`User ${username} subscribed to push notifications`);
   res.status(201).json({});
 });
@@ -77,7 +55,7 @@ const userSockets = {};
 
 io.on('connection', (socket) => {
   console.log('New client connected');
-  
+
   // Handle user joining
   socket.on('join', (username) => {
     // Check if username is taken
@@ -86,47 +64,47 @@ io.on('connection', (socket) => {
       socket.emit('join error', { message: 'Username is already taken' });
       return;
     }
-    
+
     // Add user to users array
     users.push(username);
     userSockets[username] = socket.id;
-    
+
     // Join success
     socket.emit('join success', { 
       username, 
       users,
       publicMessages: publicMessages.slice(-50) // Send last 50 messages
     });
-    
+
     // Notify other users
     socket.broadcast.emit('user joined', { username, users });
-    
+
     // Store username in socket session
     socket.username = username;
-    
+
     console.log(`${username} joined the chat`);
   });
-  
+
   // Handle public messages
   socket.on('public message', (data) => {
     if (!socket.username) return;
-    
+
     // Check for @mentions for notifications
     const mentionRegex = /@(\w+)/g;
     const mentions = [...data.content.matchAll(mentionRegex)].map(match => match[1]);
-    
+
     const message = {
       sender: socket.username,
       content: data.content,
       timestamp: new Date().toISOString()
     };
-    
+
     // Store message
     publicMessages.push(message);
-    
+
     // Broadcast message to all clients
     io.emit('public message', message);
-    
+
     // If there are mentions, send notifications
     mentions.forEach(mention => {
       const mentionSocketId = userSockets[mention];
@@ -135,7 +113,7 @@ io.on('connection', (socket) => {
           sender: socket.username,
           content: data.content
         });
-        
+
         // Send push notification for mention if user has subscribed
         if (userSubscriptions[mention]) {
           const payload = JSON.stringify({
@@ -144,16 +122,16 @@ io.on('connection', (socket) => {
             icon: '/icon.png',
             url: '/'
           });
-          
+
           webpush.sendNotification(userSubscriptions[mention], payload)
             .catch(err => console.error(`Error sending push notification to ${mention}:`, err));
         }
       }
     });
-    
+
     console.log(`Public message from ${socket.username}: ${data.content}`);
   });
-  
+
   // Handle private messages
   socket.on('private message', (data) => {
     if (!socket.username) return;
@@ -175,39 +153,50 @@ io.on('connection', (socket) => {
       });
       console.log(`Private message from ${socket.username} to ${data.to}: ${data.content}`);
 
-
+      // Trigger a browser notification for the recipient
       if (Notification.permission !== "granted") {
         Notification.requestPermission();
+      }
+
+      // Show notification if permission is granted
+      if (Notification.permission === "granted") {
+        new Notification("New Message!", {
+          body: 'New Message From ' + socket.username + "!",
+          icon: "https://via.placeholder.com/100",
+          tag: "notification-tag"
+        });
+      } else {
+        alert("Permission for notifications is denied.");
+      }
+
+      // Send push notification if the recipient has subscribed
+      if (userSubscriptions[data.to]) {
+        const payload = JSON.stringify({
+          title: 'New Private Message',
+          body: `${socket.username} sent you a private message: ${data.content.substring(0, 50)}${data.content.length > 50 ? '...' : ''}`,
+          icon: '/icon.png',
+          url: '/'
+        });
+
+        webpush.sendNotification(userSubscriptions[data.to], payload)
+          .catch(err => console.error(`Error sending push notification to ${data.to}:`, err));
+      }
     }
+  });
 
-    // Function to show notification
-        if (Notification.permission === "granted") {
-            // Create and display a notification
-            new Notification("New Message!", {
-                body: 'New Message From ' + socket.sender,
-                icon: "https://via.placeholder.com/100",
-                tag: "notification-tag"
-            });
-        } else {
-            alert("Permission for notifications is denied.");
-        }
-    
-
-  };
-}); 
   // Handle disconnection
   socket.on('disconnect', () => {
     if (socket.username) {
       // Remove user from users array
       users = users.filter(user => user !== socket.username);
       delete userSockets[socket.username];
-      
+
       // Notify other users
       socket.broadcast.emit('user left', { username: socket.username, users });
-      
+
       console.log(`${socket.username} left the chat`);
     }
-    
+
     console.log('Client disconnected');
   });
 });

@@ -428,7 +428,6 @@
     <div id="appContainer" style="display: none;">
         <header>
             <div class="app-title">ChatApp</div>
-            <button id="enable-notifications" class="notification-btn">Enable Notifications</button>
 
             <div class="header-controls">
                 <button class="theme-toggle" id="themeToggle">🌙</button>
@@ -562,11 +561,7 @@
             }
         }
 
-        document.getElementById('enable-notifications').addEventListener('click', function() {
-            if (Notification.permission !== 'granted') {
-                Notification.requestPermission();
-            }
-        });
+        
 
         // Message form submission
         messageForm.addEventListener('submit', (e) => {
