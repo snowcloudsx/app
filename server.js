@@ -1,11 +1,54 @@
+// server.js
+const notificationapi = require('notificationapi-node-server-sdk').default;
 const express = require('express');
 const http = require('http');
 const path = require('path');
 const socketIo = require('socket.io');
+const webpush = require('web-push'); // Add web-push package
+const bodyParser = require('body-parser');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
+
+// Body parser middleware
+app.use(bodyParser.json());
+
+// VAPID keys for web push - you should generate your own
+const publicVapidKey = 'BLYzhJqi5ClM66GnrFhmZ1gbkyZgPnDdYiIbcfBfKutlo0fbkOKDhLCovwLviD2hS3sA4TMMoYyfPGIOQVzG5dk';
+const privateVapidKey = 'ejXGbsD_v84bwfxZCb-RuDKTHJWpGDzLaYuIDVTtm90'; // Replace with your private key
+
+// Set VAPID details
+webpush.setVapidDetails(
+  'mailto:peregrine.asbell@rsu35.org',
+  publicVapidKey,
+  privateVapidKey
+);
+
+// Store user push subscriptions
+const userSubscriptions = {};
+
+function initNoti() {
+  notificationapi.init(
+    '7ek7cs4sow9pqewmd2rmu976ez', // clientId
+    'qjxstjec3cp03nynqygywer6gf9assg52uyae2iwh0xh1tr7gi0a8q7ut5' // clientSecret
+  )
+  
+  notificationapi.send({
+    notificationId: 'you_ve_received_a_message_',
+    user: {
+      id: "peregrine.asbell@rsu35.org",
+      email: "peregrine.asbell@rsu35.org",
+      number: "+15005550006" // Replace with your phone number, use format [+][country code][area code][local number]
+    },
+    mergeTags: {
+      "Message": "testMessage",
+      "commentId": "testCommentId"
+    }
+  })
+}
+
+initNoti();
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -13,6 +56,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Route for the homepage
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Route to subscribe to push notifications
+app.post('/subscribe', (req, res) => {
+  const subscription = req.body.subscription;
+  const username = req.body.username;
+  
+  // Store the subscription with the username
+  userSubscriptions[username] = subscription;
+  
+  console.log(`User ${username} subscribed to push notifications`);
+  res.status(201).json({});
 });
 
 // Store users and messages
@@ -80,6 +135,19 @@ io.on('connection', (socket) => {
           sender: socket.username,
           content: data.content
         });
+        
+        // Send push notification for mention if user has subscribed
+        if (userSubscriptions[mention]) {
+          const payload = JSON.stringify({
+            title: 'You were mentioned!',
+            body: `${socket.username} mentioned you: ${data.content.substring(0, 50)}${data.content.length > 50 ? '...' : ''}`,
+            icon: '/icon.png',
+            url: '/'
+          });
+          
+          webpush.sendNotification(userSubscriptions[mention], payload)
+            .catch(err => console.error(`Error sending push notification to ${mention}:`, err));
+        }
       }
     });
     
@@ -89,20 +157,53 @@ io.on('connection', (socket) => {
   // Handle private messages
   socket.on('private message', (data) => {
     if (!socket.username) return;
-    
+
     const message = {
       sender: socket.username,
       content: data.content,
       timestamp: new Date().toISOString()
     };
-    
+
     // Get recipient's socket id
     const recipientSocketId = userSockets[data.to];
-    
+
     // Send message to recipient
     if (recipientSocketId) {
-      io.to(recipientSocketId).emit('private message', message);
+      io.to(recipientSocketId).emit('private message', {
+        ...message,
+        from: socket.username
+      });
       console.log(`Private message from ${socket.username} to ${data.to}: ${data.content}`);
+
+      // Send NotificationAPI notification
+      notificationapi.send({
+        notificationId: 'private_message_received',
+        user: {
+          id: data.to,
+          email: `peregrine.asbell@rsu35.org`, // Replace with actual recipient email or make dynamic
+        },
+        mergeTags: {
+          "Sender": socket.username,
+          "Message": data.content
+        }
+      });
+      
+      // Send push notification if user has subscribed
+      if (userSubscriptions[data.to]) {
+        const payload = JSON.stringify({
+          title: `New message from ${socket.username}`,
+          body: `${data.content.substring(0, 50)}${data.content.length > 50 ? '...' : ''}`,
+          icon: '/icon.png',
+          url: '/',
+          data: {
+            sender: socket.username,
+            messagePreview: data.content
+          }
+        });
+        
+        webpush.sendNotification(userSubscriptions[data.to], payload)
+          .catch(err => console.error(`Error sending push notification to ${data.to}:`, err));
+      }
     }
   });
   
