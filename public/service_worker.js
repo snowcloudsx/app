@@ -52,7 +52,7 @@ self.addEventListener('push', event => {
       // If no subscription exists, create one
       if (!subscription) {
         // Get the server's public key
-        const publicVapidKey = 'BLG7-_eDSQ1dvP_nL1atFQvgRgxaLE_v7Ny1HyQNlPUEPXalExW3MmzN6SNdYkm6B8GtuIPqrXIl5qXvnv6ocVY';
+        const publicVapidKey = 'BLYzhJqi5ClM66GnrFhmZ1gbkyZgPnDdYiIbcfBfKutlo0fbkOKDhLCovwLviD2hS3sA4TMMoYyfPGIOQVzG5dk';
         
         // Subscribe the user
         subscription = await registration.pushManager.subscribe({

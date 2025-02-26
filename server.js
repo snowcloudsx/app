@@ -175,38 +175,26 @@ io.on('connection', (socket) => {
       });
       console.log(`Private message from ${socket.username} to ${data.to}: ${data.content}`);
 
-      // Send NotificationAPI notification
-      notificationapi.send({
-        notificationId: 'private_message_received',
-        user: {
-          id: data.to,
-          email: `peregrine.asbell@rsu35.org`, // Replace with actual recipient email or make dynamic
-        },
-        mergeTags: {
-          "Sender": socket.username,
-          "Message": data.content
-        }
-      });
-      
-      // Send push notification if user has subscribed
-      if (userSubscriptions[data.to]) {
-        const payload = JSON.stringify({
-          title: `New message from ${socket.username}`,
-          body: `${data.content.substring(0, 50)}${data.content.length > 50 ? '...' : ''}`,
-          icon: '/icon.png',
-          url: '/',
-          data: {
-            sender: socket.username,
-            messagePreview: data.content
-          }
-        });
-        
-        webpush.sendNotification(userSubscriptions[data.to], payload)
-          .catch(err => console.error(`Error sending push notification to ${data.to}:`, err));
-      }
+
+      if (Notification.permission !== "granted") {
+        Notification.requestPermission();
     }
-  });
-  
+
+    // Function to show notification
+        if (Notification.permission === "granted") {
+            // Create and display a notification
+            new Notification("New Message!", {
+                body: 'New Message From ' + socket.sender,
+                icon: "https://via.placeholder.com/100",
+                tag: "notification-tag"
+            });
+        } else {
+            alert("Permission for notifications is denied.");
+        }
+    
+
+  };
+}); 
   // Handle disconnection
   socket.on('disconnect', () => {
     if (socket.username) {
